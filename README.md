@@ -1,6 +1,6 @@
 # Wootili-View
 
-![app_preview](https://github.com/MrEnder0/wootili-view/blob/master/.github/assets/app_preview.png?raw=true)
+![app_preview](https://github.com/treymouledoux/wootili-view/blob/master/.github/assets/app_preview.png?raw=true)
 
 > [!IMPORTANT]
 > I plan on doing a full rewrite to this software, this will overhaul the rgb controlling and the ui!

@@ -4,7 +4,7 @@
 #define MyAppName "Wootili-View"
 #define MyAppVersion "0.7.4"
 #define MyAppPublisher "Mr.Ender"
-#define MyAppURL "https://github.com/MrEnder0/wootili-view"
+#define MyAppURL "https://github.com/treymouledoux/wootili-view"
 #define MyAppExeName "Wootili-View.exe"
 
 [Setup]

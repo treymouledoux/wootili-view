@@ -12,7 +12,7 @@ pub extern "C" fn update_check_ui(ui: &mut egui::Ui, log_path: String) {
         ui.hyperlink_to(
             format!("Wootili-View {}", env!("CARGO_PKG_VERSION")),
             format!(
-                "https://github.com/MrEnder0/wootili-view/releases/tag/{}",
+                "https://github.com/treymouledoux/wootili-view/releases/tag/{}",
                 env!("CARGO_PKG_VERSION")
             ),
         );
@@ -57,7 +57,7 @@ pub extern "C" fn update_check_ui(ui: &mut egui::Ui, log_path: String) {
                 ui.label("New Version Available").on_hover_ui(|ui| {
                     ui.label(format!("New version available: {}", <std::option::Option<std::string::String> as Clone>::clone(&latest_ver).unwrap()));
                     ui.hyperlink_to("Download", format!(
-                        "https://github.com/MrEnder0/wootili-view/releases/tag/{}",
+                        "https://github.com/treymouledoux/wootili-view/releases/tag/{}",
                         <std::option::Option<std::string::String> as Clone>::clone(&latest_ver).unwrap()
                     ));
                 });
@@ -103,7 +103,7 @@ fn get_version_info() -> Result<String, Box<dyn std::error::Error>> {
         .unwrap();
 
     let content = client
-        .get("https://api.github.com/repos/MrEnder0/Wootili-view/releases/latest")
+        .get("https://api.github.com/repos/treymouledoux/Wootili-view/releases/latest")
         .send()?
         .text()?;
 
