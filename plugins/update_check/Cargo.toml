@@ -12,5 +12,5 @@ crate-type = ["cdylib"]
 reqwest = { version = "0.12.12", features = ["blocking"] }
 serde_json = "1.0.139"
 scorched = "0.5.3"
-eframe = "0.31.0"
+eframe = { workspace = true }
 ver-cmp = "0.1.4"

@@ -32,6 +32,10 @@ cargo build --release
 
 For an existing checkout, run `git submodule update --init --recursive`.
 
+`cargo build --release` builds the app and the update-check plugin through the root `build.rs`. On Windows, the finished files are `target/release/wootili-view.exe` and `target/release/update_check.dll`. Keep both files together when copying the app. The Inno Setup script reads these release outputs directly.
+
+Use `cargo run` for a debug build with the plugin, `cargo test` to check the app and plugin loading, and `cargo clean` to remove Cargo build outputs. The plugin and app share the workspace lockfile and `eframe` dependency. The build script uses a separate output directory for its nested plugin build.
+
 RGB control uses [wooting-rgb-rust](https://github.com/treymouledoux/wooting-rgb-rust), pinned as a submodule in `vendor/wooting-rgb-rust`. That wrapper builds its pinned official Wooting SDK and HIDAPI sources. Keyboard dimensions come from the SDK metadata, including 80HE and 60HE V2 models.
 
 To update the wrapper, check out a reviewed commit inside `vendor/wooting-rgb-rust`, run `git submodule update --init --recursive`, build the app, and commit the new submodule pointer.

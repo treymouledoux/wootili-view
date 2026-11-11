@@ -43,8 +43,8 @@ Name: "baseinstall"; Description: "Includes necessary base files"; Flags: exclus
 Name: "baseinstall\updatecheck"; Description: "Lastest version info checker (recommended)"
 
 [Files]
-Source: "wootili-view.exe"; DestDir: "{app}"; Flags: ignoreversion; Components: baseinstall
-Source: "update_check.dll"; DestDir: "{app}"; Flags: ignoreversion; Components: baseinstall\updatecheck
+Source: "target\release\wootili-view.exe"; DestDir: "{app}"; Flags: ignoreversion; Components: baseinstall
+Source: "target\release\update_check.dll"; DestDir: "{app}"; Flags: ignoreversion; Components: baseinstall\updatecheck
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 
 [Icons]

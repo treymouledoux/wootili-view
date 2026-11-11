@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 wooting-rgb-rust = { path = "vendor/wooting-rgb-rust" }
-eframe = "0.31.1"
+eframe = { workspace = true }
 image = "0.25.5"
 xcap = "0.4.0"
 egui-notify = "0.19.0"
@@ -15,3 +15,11 @@ scorched = "0.5.3"
 serde = { version = "1.0.219", features = ["derive"] }
 ron = "0.9.0"
 libloading = "0.8.6"
+
+[workspace]
+members = ["plugins/update_check"]
+default-members = ["."]
+resolver = "2"
+
+[workspace.dependencies]
+eframe = "0.31.1"
