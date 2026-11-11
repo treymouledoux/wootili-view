@@ -93,7 +93,7 @@ impl Default for MyApp {
             check_updates: true,
             device_creation: wooting::get_device_creation(0),
             device_version: wooting::get_device_version(),
-            rgb_size: wooting::get_rgb_size().unwrap(),
+            rgb_size: wooting::get_rgb_size().unwrap_or((0, 0)),
             next_frame: Duration::from_secs(0),
         }
     }
@@ -364,6 +364,8 @@ impl eframe::App for MyApp {
             ]),
             &mut self.toasts,
         );
+        CLOSE_APP.store(true, Ordering::Release);
+        CAPTURE_LOCK.store(true, Ordering::Relaxed);
         wooting::exit_rgb();
     }
 }

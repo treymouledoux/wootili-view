@@ -71,7 +71,7 @@ pub fn capture() {
         .unwrap()
         .replace(DynamicImage::new_rgba8(1, 1));
 
-    loop {
+    while !crate::CLOSE_APP.load(Ordering::Acquire) {
         if CAPTURE_LOCK.load(Ordering::Relaxed) {
             std::thread::sleep(Duration::from_millis(10));
             continue;
@@ -80,6 +80,15 @@ pub fn capture() {
         if CAPTURE_SETTINGS_RELOAD.load(Ordering::Relaxed) {
             current_settings = CAPTURE_SETTINGS.read().unwrap().clone();
             CAPTURE_SETTINGS_RELOAD.store(false, Ordering::Relaxed);
+        }
+
+        if current_settings.rgb_size.0 == 0 || current_settings.rgb_size.1 == 0 {
+            wooting::reconnect_device();
+            current_settings.device_name = wooting::get_device_name();
+            current_settings.rgb_size = wooting::get_rgb_size().unwrap_or((0, 0));
+            last_frame = DynamicImage::new_rgba8(1, 1);
+            std::thread::sleep(Duration::from_millis(500));
+            continue;
         }
 
         let mut current_frame_reduce = false;
@@ -119,41 +128,34 @@ pub fn capture() {
             //*CAPTURE_PREVIEW.write().unwrap() = rgb_screen.clone();
         }
 
-        let frame_rgb_size: (u32, u32) = current_settings.rgb_size;
-        if frame_rgb_size.0 != 0 && frame_rgb_size.1 != 0 {
-            let resized_capture = rgb_screen.clone();
+        let resized_capture = rgb_screen.clone();
 
-            if current_settings.reduce_bright_effects {
-                let avg_screen =
-                    resized_capture
-                        .clone()
-                        .resize(1, 1, image::imageops::FilterType::Gaussian);
+        if current_settings.reduce_bright_effects {
+            let avg_screen =
+                resized_capture
+                    .clone()
+                    .resize(1, 1, image::imageops::FilterType::Gaussian);
 
-                let image::Rgba([r, g, b, _]) = avg_screen.get_pixel(0, 0);
+            let image::Rgba([r, g, b, _]) = avg_screen.get_pixel(0, 0);
 
-                if r > 220 || g > 220 || b > 220 {
-                    current_frame_reduce = true;
-                    current_settings.brightness -= 50;
-                }
+            if r > 220 || g > 220 || b > 220 {
+                current_frame_reduce = true;
+                current_settings.brightness -= 50;
             }
+        }
 
-            wooting::draw_rgb(
-                resized_capture.clone(),
-                current_settings.brightness,
-                current_settings.red_shift_fix,
-                current_settings.highlight_wasd,
-                current_settings.device_name.clone(),
-            );
+        let rendered = wooting::draw_rgb(
+            resized_capture.clone(),
+            current_settings.brightness,
+            current_settings.red_shift_fix,
+            current_settings.highlight_wasd,
+        );
 
-            if current_frame_reduce {
-                current_settings.brightness += 50;
-            }
-        } else {
-            wooting::reconnect_device();
-            current_settings.device_name = wooting::get_device_name();
-
-            current_settings.rgb_size = wooting::get_rgb_size()
-                .log_expect(scorched::LogImportance::Error, "Failed to get rgb size");
+        if current_frame_reduce {
+            current_settings.brightness += 50;
+        }
+        if !rendered {
+            current_settings.rgb_size = (0, 0);
         }
 
         next_frame = Duration::from_millis(

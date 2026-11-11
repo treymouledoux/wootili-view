@@ -20,4 +20,18 @@ The functionality of this project is straightforward process. The program captur
 
 ### Prerequisites
 
-You will need a Rust toolchain to compile the program.
+You will need Rust 1.88+, Visual Studio C++ Build Tools with the Windows SDK, and LLVM/libclang to compile the program. Set `LIBCLANG_PATH` if LLVM is outside its usual installation directory.
+
+Clone the nested SDK submodules before building.
+
+```sh
+git clone --recurse-submodules https://github.com/treymouledoux/wootili-view.git
+cd wootili-view
+cargo build --release
+```
+
+For an existing checkout, run `git submodule update --init --recursive`.
+
+RGB control uses [wooting-rgb-rust](https://github.com/treymouledoux/wooting-rgb-rust), pinned as a submodule in `vendor/wooting-rgb-rust`. That wrapper builds its pinned official Wooting SDK and HIDAPI sources. Keyboard dimensions come from the SDK metadata, including 80HE and 60HE V2 models.
+
+To update the wrapper, check out a reviewed commit inside `vendor/wooting-rgb-rust`, run `git submodule update --init --recursive`, build the app, and commit the new submodule pointer.
