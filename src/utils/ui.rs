@@ -100,6 +100,7 @@ pub fn display_device_info(
 
             *device_name = wooting::get_device_name();
             *device_creation = wooting::get_device_creation(0);
+            *device_version = wooting::get_device_version();
             *init = true;
         }
     });

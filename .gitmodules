@@ -1,0 +1,3 @@
+[submodule "vendor/wooting-rgb-rust"]
+	path = vendor/wooting-rgb-rust
+	url = https://github.com/treymouledoux/wooting-rgb-rust.git

@@ -1,107 +1,90 @@
-use std::ffi::CStr;
+use std::sync::Mutex;
 
 use image::GenericImageView;
-use scorched::{logf, LogData, LogExpect, LogImportance};
-use wooting_rgb_sys as wooting;
+use scorched::{logf, LogData, LogImportance};
+use wooting_rgb_rust::{Device, DeviceInfo, DeviceType, Error, Frame, Rgb, Sdk};
+
+// UI queries and the capture thread share one native SDK session. Hold the lock
+// through an entire frame so refresh and shutdown cannot interrupt RGB writes.
+static SDK: Mutex<Option<Sdk>> = Mutex::new(None);
+
+fn with_device<T>(operation: impl FnOnce(&mut Device<'_>) -> Result<T, Error>) -> Result<T, Error> {
+    let mut state = SDK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    if crate::CLOSE_APP.load(std::sync::atomic::Ordering::Acquire) {
+        return Err(Error::OperationFailed(
+            "access SDK after application shutdown",
+        ));
+    }
+    if state.is_none() {
+        *state = Some(Sdk::new()?);
+    }
+    let sdk = state.as_mut().unwrap();
+    if sdk.devices()?.is_empty() {
+        sdk.refresh()?;
+    }
+    operation(&mut sdk.device(0)?)
+}
+
+fn capture_dimensions(info: &DeviceInfo) -> (u32, u32, u32) {
+    // The 60% matrix retains an empty function-key row. Other layouts use row 0.
+    let first_row = u32::from(info.device_type == DeviceType::SixtyPercent);
+    if info.led_index_max == 0 {
+        return (0, 0, first_row);
+    }
+    (
+        info.columns.into(),
+        u32::from(info.rows).saturating_sub(first_row),
+        first_row,
+    )
+}
 
 pub fn get_rgb_size() -> Option<(u32, u32)> {
-    let model_name = get_device_name();
-
-    match model_name.as_str() {
-        //TODO: Verify these sizes for the one two and uwu
-        "Wooting One" => Some((17, 6)),
-        "Wooting Two" | "Wooting Two LE" | "Wooting Two HE" | "Wooting Two HE (ARM)" => {
-            Some((17, 6))
-        }
-        "Wooting 60HE" | "Wooting 60HE (ARM)" => Some((14, 5)),
-        "Wooting UwU RGB" => Some((6, 4)),
-        "Wooting UwU" => {
-            logf!(
-                Warning,
-                "Standard Wooting UwU device does not have any RGB lights, returning (0, 0)"
-            );
-            Some((0, 0))
-        }
-        _ => {
-            logf!(Error, "Unsupported device model: {}", model_name);
-            None
-        }
-    }
+    with_device(|device| {
+        let (width, height, _) = capture_dimensions(&device.info()?);
+        Ok((width, height))
+    })
+    .ok()
 }
 
 pub fn get_device_name() -> String {
-    unsafe {
-        wooting::wooting_usb_disconnect(false);
-        std::thread::sleep(std::time::Duration::from_millis(50));
-        wooting::wooting_usb_find_keyboard();
-
-        let wooting_usb_meta = *wooting::wooting_usb_get_meta();
-        let model = CStr::from_ptr(wooting_usb_meta.model);
-
-        model
-            .to_str()
-            .log_expect(LogImportance::Error, "Failed to convert device name to str")
-            .to_string()
-    }
+    with_device(|device| Ok(device.info()?.model)).unwrap_or_else(|_| "N/A".into())
 }
 
-pub fn get_device_creation(depth: u8) -> String {
-    unsafe {
-        wooting::wooting_usb_disconnect(false);
-        std::thread::sleep(std::time::Duration::from_millis(50));
-        wooting::wooting_usb_find_keyboard();
+fn device_response(command: u8) -> Result<Vec<u8>, Error> {
+    with_device(|device| {
+        let info = device.info()?;
+        let response = device.feature_response(command, [0; 4])?;
+        // V2 responses include a report-ID byte before the legacy header.
+        let header = if info.v2_interface { 5 } else { 4 };
+        response
+            .get(header..)
+            .map(<[u8]>::to_vec)
+            .ok_or(Error::OperationFailed("decode device information"))
+    })
+}
 
-        let len = u8::MAX as usize + 3;
-        let mut buff = vec![0u8; len];
-        wooting::wooting_usb_send_feature_with_response(buff.as_mut_ptr(), len, 3, 0, 0, 0, 0);
-
-        let year: u16 = 2000 + buff[7] as u16;
-        let week = buff[8];
-
-        if year == 2000 && week == 0 {
-            logf!(
-                Warning,
-                "Failed to get device creation date retry {}",
-                depth
-            );
-            if depth < 3 {
-                return get_device_creation(depth + 1);
+pub fn get_device_creation(_depth: u8) -> String {
+    for _ in 0..3 {
+        if let Ok(response) = device_response(3) {
+            if let Some(date) = response.get(2..4) {
+                if (1..=53).contains(&date[1]) {
+                    return format!("Week {} of {}", date[1], 2000 + u16::from(date[0]));
+                }
             }
-            "N/A".to_string()
-        } else {
-            format!("Week {} of {}", week, year)
         }
     }
+    "N/A".into()
 }
 
 pub fn get_device_version() -> String {
-    unsafe {
-        wooting::wooting_usb_disconnect(false);
-        std::thread::sleep(std::time::Duration::from_millis(50));
-        wooting::wooting_usb_find_keyboard();
-
-        let len = u8::MAX as usize + 3;
-        let mut buff = vec![0u8; len];
-        wooting::wooting_usb_send_feature_with_response(buff.as_mut_ptr(), len, 1, 0, 0, 0, 0);
-
-        let major = buff[5];
-        let minor = buff[6];
-        let patch = buff[7];
-
-        let firmware_version = format!("{}.{}.{}", major, minor, patch);
-
-        /*
-        if let Ok(result) = compare_versions(&firmware_version, "2.8.0") {
-            if result == std::cmp::Ordering::Greater {
-                return (firmware_version, true);
-            }
-        }
-
-        (firmware_version, false)
-        */
-
-        firmware_version
-    }
+    device_response(1)
+        .ok()
+        .and_then(|response| {
+            response
+                .get(..3)
+                .map(|version| format!("{}.{}.{}", version[0], version[1], version[2]))
+        })
+        .unwrap_or_else(|| "N/A".into())
 }
 
 pub fn draw_rgb(
@@ -109,70 +92,98 @@ pub fn draw_rgb(
     brightness: u8,
     red_shift_fix: bool,
     highlight_wasd: bool,
-    model_name: String,
-) {
-    unsafe {
-        for (x, y, pixel) in resized_capture.pixels() {
-            let image::Rgba([r, g, b, _]) = pixel;
-
-            // When highlight WASD is enabled, the WASD keys are set to red
-            if !(!highlight_wasd
-                || x != 2 && y != 2
-                || y != 1 && y != 2
-                || x != 2 && x != 1 && x != 3)
-            {
-                wooting::wooting_rgb_array_set_single(y as u8 + 1, x as u8, 255, 0, 0);
-                continue;
-            }
-
-            // On 60HE models, the spacebar area is skipped for redshift fix due to the rgb lights not being covered by the keyswitches
-            if model_name == "Wooting 60HE"
-                || model_name == "Wooting 60HE (ARM)" && y == 4 && x > 3 && x < 10
-            {
-                wooting::wooting_rgb_array_set_single(
-                    y as u8 + 1,
-                    x as u8,
-                    (r as f32 * (brightness as f32 * 0.01)).round() as u8,
-                    (g as f32 * (brightness as f32 * 0.01)).round() as u8,
-                    (b as f32 * (brightness as f32 * 0.01)).round() as u8,
-                );
-
-                continue;
-            }
-
-            let (adjusted_r, adjusted_b) = match (red_shift_fix, r, b) {
-                (true, r, b) => (r as f32 * 0.55, b as f32 * 1.2),
-                (false, r, b) => (r as f32, b as f32),
-            };
-
-            let red = (adjusted_r * (brightness as f32 * 0.01)).round() as u8;
-            let green = (g as f32 * (brightness as f32 * 0.01)).round() as u8;
-            let blue = (adjusted_b * (brightness as f32 * 0.01)).round() as u8;
-
-            wooting::wooting_rgb_array_set_single(y as u8 + 1, x as u8, red, green, blue);
+) -> bool {
+    with_device(|device| {
+        let info = device.info()?;
+        let (width, height, first_row) = capture_dimensions(&info);
+        if resized_capture.dimensions() != (width, height) {
+            return Err(Error::OperationFailed(
+                "draw image with outdated keyboard dimensions",
+            ));
         }
-
-        wooting::wooting_rgb_array_update_keyboard();
-    }
+        let mut frame = Frame::new();
+        for (x, y, pixel) in resized_capture.pixels() {
+            let row = y + first_row;
+            let image::Rgba([r, g, b, _]) = pixel;
+            // W is at row 2, and A/S/D at row 3 of the SDK's keyboard matrix.
+            let wasd = info.device_type != DeviceType::Keypad
+                && ((row == 2 && x == 2) || (row == 3 && (1..=3).contains(&x)));
+            let color = if highlight_wasd && wasd {
+                Rgb::new(255, 0, 0)
+            } else {
+                let exposed_spacebar =
+                    info.device_type == DeviceType::SixtyPercent && row == 5 && x > 3 && x < 10;
+                let (red, blue) = if red_shift_fix && !exposed_spacebar {
+                    (r as f32 * 0.55, b as f32 * 1.2)
+                } else {
+                    (r as f32, b as f32)
+                };
+                let scale = f32::from(brightness.min(100)) / 100.0;
+                Rgb::new(
+                    (red * scale).round() as u8,
+                    (g as f32 * scale).round() as u8,
+                    (blue * scale).round() as u8,
+                )
+            };
+            frame.set(row as usize, x as usize, color)?;
+        }
+        device.set_frame(&frame)?;
+        device.flush()
+    })
+    .is_ok()
 }
 
 pub fn reconnect_device() {
-    exit_rgb();
-    logf!(Info, "Reconnecting RGB Device");
-    update_rgb();
+    let mut state = SDK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(sdk) = state.as_mut() {
+        let _ = sdk.refresh();
+    }
 }
 
 pub fn exit_rgb() {
-    logf!(Info, "Exiting RGB Device");
-    unsafe {
-        wooting::wooting_rgb_reset();
-        wooting::wooting_rgb_reset_rgb();
-        wooting::wooting_rgb_close();
+    let mut state = SDK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(sdk) = state.take() {
+        if let Err(error) = sdk.close() {
+            logf!(Warning, "RGB shutdown: {}", error);
+        }
     }
 }
 
 pub fn update_rgb() {
-    unsafe {
-        wooting::wooting_rgb_array_update_keyboard();
+    let _ = with_device(|device| device.flush());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wooting_rgb_rust::Layout;
+
+    #[test]
+    fn capture_uses_device_dimensions_and_only_skips_the_60_percent_spacer() {
+        let mut info = DeviceInfo {
+            index: 0,
+            model: "Test keyboard".into(),
+            rows: 6,
+            columns: 14,
+            led_index_max: 116,
+            device_type: DeviceType::SixtyPercent,
+            layout: Layout::Ansi,
+            v2_interface: true,
+            uses_small_packets: false,
+            uses_multi_report: true,
+        };
+        assert_eq!(capture_dimensions(&info), (14, 5, 1));
+        info.device_type = DeviceType::FullSize;
+        info.columns = 21;
+        assert_eq!(capture_dimensions(&info), (21, 6, 0));
+        info.device_type = DeviceType::EightyPercent;
+        info.columns = 17;
+        assert_eq!(capture_dimensions(&info), (17, 6, 0));
+        info.device_type = DeviceType::Keypad;
+        info.rows = 5;
+        info.columns = 7;
+        assert_eq!(capture_dimensions(&info), (7, 5, 0));
+        info.led_index_max = 0;
+        assert_eq!(capture_dimensions(&info), (0, 0, 0));
     }
 }

@@ -2,7 +2,7 @@
 ; Modifications by Mr.Ender
 
 #define MyAppName "Wootili-View"
-#define MyAppVersion "0.7.4"
+#define MyAppVersion "0.8.0"
 #define MyAppPublisher "Mr.Ender"
 #define MyAppURL "https://github.com/treymouledoux/wootili-view"
 #define MyAppExeName "Wootili-View.exe"
@@ -43,8 +43,8 @@ Name: "baseinstall"; Description: "Includes necessary base files"; Flags: exclus
 Name: "baseinstall\updatecheck"; Description: "Lastest version info checker (recommended)"
 
 [Files]
-Source: "wootili-view.exe"; DestDir: "{app}"; Flags: ignoreversion; Components: baseinstall
-Source: "update_check.dll"; DestDir: "{app}"; Flags: ignoreversion; Components: baseinstall\updatecheck
+Source: "target\release\wootili-view.exe"; DestDir: "{app}"; Flags: ignoreversion; Components: baseinstall
+Source: "target\release\update_check.dll"; DestDir: "{app}"; Flags: ignoreversion; Components: baseinstall\updatecheck
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 
 [Icons]

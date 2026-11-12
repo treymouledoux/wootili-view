@@ -17,12 +17,18 @@ pub fn get_available_plugins() -> Vec<Plugin> {
                 let mut detected_plugins = Vec::new();
 
                 // Update Check Plugin
-                if let Ok(lib) = Library::new("update_check") {
-                    if let Ok(_) = {
-                        lib.get::<extern "C" fn(String) -> Option<String>>(
-                            "update_check_ui".as_bytes(),
-                        )
-                    } {
+                let Some(directory) = std::env::current_exe()
+                    .ok()
+                    .and_then(|path| path.parent().map(std::path::Path::to_path_buf))
+                else {
+                    return detected_plugins;
+                };
+                let plugin_path = directory.join(libloading::library_filename("update_check"));
+                if let Ok(lib) = Library::new(plugin_path) {
+                    if lib
+                        .get::<extern "C" fn(&mut egui::Ui, String)>(b"update_check_ui")
+                        .is_ok()
+                    {
                         detected_plugins.push(Plugin {
                             name: "update_check".to_string(),
                             lib: Arc::new(lib),
@@ -43,5 +49,22 @@ pub fn update_check_ui(loaded_lib: Arc<Library>, ui: &mut egui::Ui, log_path: St
                 Err(_) => return,
             };
         update_check_ui(ui, log_path);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cargo_builds_a_loadable_update_check_plugin() {
+        // Loading and resolving the symbol exercises the actual staged library
+        // without calling the UI or making an update-check network request.
+        unsafe {
+            let library = Library::new(env!("WOOTILI_UPDATE_CHECK_PATH")).unwrap();
+            library
+                .get::<extern "C" fn(&mut egui::Ui, String)>(b"update_check_ui")
+                .unwrap();
+        }
     }
 }
