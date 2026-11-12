@@ -1,84 +1,53 @@
-use std::{cmp::Ordering as cmp, sync::OnceLock};
+use std::{
+    ffi::{c_char, CStr},
+    sync::OnceLock,
+    time::Duration,
+};
 
-use eframe::egui;
 use reqwest::header::{HeaderMap, USER_AGENT};
-use scorched::{log_this, logf, set_logging_path, LogData, LogImportance};
+use scorched::{logf, set_logging_path, LogData, LogImportance};
 
 static LATEST_VER: OnceLock<Option<String>> = OnceLock::new();
 
+/// Returns the byte length of the cached UTF-8 release tag, or -1 on failure.
+/// A null buffer with zero capacity queries the length. The tag is copied
+/// without a terminator when the supplied buffer is large enough.
+///
+/// # Safety
+///
+/// A non-null `log_path` must point to a valid nul-terminated string. A
+/// non-null `buffer` must point to writable storage of at least `capacity` bytes.
 #[no_mangle]
-pub extern "C" fn update_check_ui(ui: &mut egui::Ui, log_path: String) {
-    ui.horizontal(|ui| {
-        ui.hyperlink_to(
-            format!("Wootili-View {}", env!("CARGO_PKG_VERSION")),
-            format!(
-                "https://github.com/treymouledoux/wootili-view/releases/tag/{}",
-                env!("CARGO_PKG_VERSION")
-            ),
-        );
+pub unsafe extern "C" fn wootili_update_check_v1(
+    log_path: *const c_char,
+    buffer: *mut u8,
+    capacity: usize,
+) -> isize {
+    if log_path.is_null() || (buffer.is_null() && capacity != 0) {
+        return -1;
+    }
+    let Ok(log_path) = (unsafe { CStr::from_ptr(log_path) }).to_str() else {
+        return -1;
+    };
+    let Some(version) = LATEST_VER
+        .get_or_init(|| std::panic::catch_unwind(|| get_latest_version(log_path)).unwrap_or(None))
+        .as_ref()
+    else {
+        return -1;
+    };
 
-        let latest_ver = match LATEST_VER.get() {
-            Some(ver) => ver.clone(),
-            None => {
-                let ver = get_lastest_ver(format!("{}/", log_path));
-
-                let _ = LATEST_VER.set(ver.clone());
-
-                ver
-            }
-        };
-
-        if latest_ver.is_none() {
-            ui.separator();
-            ui.label("Failed to check for updates").on_hover_text(
-                "Failed to check for updates, try checking your internet connection",
-            );
-
-            return;
-        }
-
-        let version_cmp = match ver_cmp::compare_versions(
-            env!("CARGO_PKG_VERSION"),
-            &<std::option::Option<std::string::String> as Clone>::clone(&latest_ver).unwrap() as &str,
-        ) {
-            Ok(version_cmp) => version_cmp,
-            Err(_) => {
-                log_this(LogData {
-                    importance: scorched::LogImportance::Error,
-                    message: "Failed to compare versions, this is likly due to a version format error".to_string(),
-                });
-                return;
-            }
-        };
-
-        match version_cmp {
-            cmp::Less => {
-                ui.separator();
-                ui.label("New Version Available").on_hover_ui(|ui| {
-                    ui.label(format!("New version available: {}", <std::option::Option<std::string::String> as Clone>::clone(&latest_ver).unwrap()));
-                    ui.hyperlink_to("Download", format!(
-                        "https://github.com/treymouledoux/wootili-view/releases/tag/{}",
-                        <std::option::Option<std::string::String> as Clone>::clone(&latest_ver).unwrap()
-                    ));
-                });
-            }
-            cmp::Greater => {
-                ui.separator();
-                ui.label("Developer Build").highlight().on_hover_text("This build has been detected as unpublished meaning this is most likely a developer build or a pulled release; this build may be unstable or have unfinished/broken features.");
-            }
-            _ => {}
-        }
-    });
+    if !buffer.is_null() && capacity >= version.len() {
+        unsafe { std::ptr::copy_nonoverlapping(version.as_ptr(), buffer, version.len()) };
+    }
+    isize::try_from(version.len()).unwrap_or(-1)
 }
 
-#[no_mangle]
-pub extern "C" fn get_lastest_ver(log_path: String) -> Option<String> {
-    set_logging_path(log_path.as_str());
+fn get_latest_version(log_path: &str) -> Option<String> {
+    set_logging_path(log_path);
 
     match get_version_info() {
         Ok(version) => {
-            logf!(Info, "Successfully fetched lastest version: {}", version);
-
+            logf!(Info, "Successfully fetched latest version: {}", version);
             Some(version)
         }
         Err(err) => {
@@ -87,7 +56,6 @@ pub extern "C" fn get_lastest_ver(log_path: String) -> Option<String> {
                 "Failed to get latest version because of the following error: {}",
                 err
             );
-
             None
         }
     }
@@ -99,8 +67,8 @@ fn get_version_info() -> Result<String, Box<dyn std::error::Error>> {
 
     let client = reqwest::blocking::Client::builder()
         .default_headers(headers)
-        .build()
-        .unwrap();
+        .timeout(Duration::from_secs(10))
+        .build()?;
 
     let content = client
         .get("https://api.github.com/repos/treymouledoux/Wootili-view/releases/latest")
@@ -112,5 +80,39 @@ fn get_version_info() -> Result<String, Box<dyn std::error::Error>> {
     match json["tag_name"].as_str() {
         Some(tag_name) => Ok(tag_name.to_string()),
         None => Err("Failed to get tag_name element in json".into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ptr;
+
+    #[test]
+    fn query_returns_length_and_copies_cached_tag_when_it_fits() {
+        let tag = "v1.2.3";
+        LATEST_VER.set(Some(tag.to_owned())).unwrap();
+        let log_path = c"unused".as_ptr();
+        let expected_length = tag.len() as isize;
+        let mut buffer = [b'!'; 8];
+
+        unsafe {
+            assert_eq!(wootili_update_check_v1(ptr::null(), ptr::null_mut(), 0), -1);
+            assert_eq!(wootili_update_check_v1(log_path, ptr::null_mut(), 1), -1);
+            assert_eq!(
+                wootili_update_check_v1(log_path, ptr::null_mut(), 0),
+                expected_length
+            );
+            assert_eq!(
+                wootili_update_check_v1(log_path, buffer.as_mut_ptr(), tag.len() - 1),
+                expected_length
+            );
+            assert_eq!(buffer, *b"!!!!!!!!");
+            assert_eq!(
+                wootili_update_check_v1(log_path, buffer.as_mut_ptr(), buffer.len()),
+                expected_length
+            );
+            assert_eq!(buffer, *b"v1.2.3!!");
+        }
     }
 }

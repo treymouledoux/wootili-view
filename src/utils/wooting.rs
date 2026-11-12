@@ -1,7 +1,7 @@
 use std::sync::Mutex;
 
 use image::GenericImageView;
-use scorched::{logf, LogData, LogImportance};
+use scorched::logf;
 use wooting_rgb_rust::{Device, DeviceInfo, DeviceType, Error, Frame, Rgb, Sdk};
 
 // UI queries and the capture thread share one native SDK session. Hold the lock

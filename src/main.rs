@@ -2,10 +2,10 @@
 
 mod utils;
 
-use eframe::{egui, emath::Rangef};
+use eframe::egui;
 use egui_notify::Toasts;
 use image::imageops::FilterType;
-use scorched::{logf, LogData, LogImportance};
+use scorched::logf;
 use std::{
     sync::atomic::{AtomicBool, Ordering},
     time::Duration,
@@ -39,7 +39,7 @@ fn main() -> Result<(), eframe::Error> {
         capture();
     });
 
-    while CLOSE_APP.load(Ordering::Relaxed) == false {
+    while !CLOSE_APP.load(Ordering::Relaxed) {
         eframe::run_native(
             "Wootili-View",
             eframe::NativeOptions {
@@ -100,7 +100,7 @@ impl Default for MyApp {
 }
 
 impl eframe::App for MyApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         if self.is_startup {
             if !cfg!(windows) {
                 self.toasts
@@ -161,16 +161,53 @@ impl eframe::App for MyApp {
             CAPTURE_SETTINGS_RELOAD.store(true, Ordering::Relaxed);
             CAPTURE_LOCK.store(false, Ordering::Relaxed);
 
-            if self.dark_mode {
-                ctx.set_visuals(egui::Visuals::dark());
-            } else {
-                ctx.set_visuals(egui::Visuals::light());
-            }
-
+            apply_theme(ui, self.dark_mode);
             self.is_startup = false;
         }
 
-        egui::CentralPanel::default().show(ctx, |ui| {
+        if let Some(plugin) = self
+            .plugins
+            .iter()
+            .find(|plugin| plugin.name == "update_check")
+        {
+            egui::Panel::bottom("footer").show(ui, |ui| {
+                update_check_ui(
+                    plugin.lib.clone(),
+                    ui,
+                    utils::paths::logging_path().to_string_lossy().to_string(),
+                );
+            });
+        }
+
+        let frame_rgb_size = self.rgb_size;
+        let preview_panel = egui::Panel::right("lighting_preview_panel");
+        let preview_panel = if frame_rgb_size.0 == 0 {
+            preview_panel
+        } else {
+            let rgb_width = frame_rgb_size.0 as f32;
+            preview_panel.size_range(rgb_width * 15.0..=rgb_width * 22.0)
+        };
+        preview_panel.show(ui, |ui| {
+            if self.display_rgb_preview {
+                match CAPTURE_PREVIEW.read().unwrap().clone() {
+                    Some(preview) => rgb_preview(ui, frame_rgb_size, preview),
+                    None => {
+                        ui.heading("No Preview Available");
+                    }
+                }
+            }
+            display_device_info(
+                ui,
+                &mut self.toasts,
+                &mut self.device_name,
+                &mut self.device_creation,
+                &mut self.device_version,
+                &mut self.is_startup,
+                frame_rgb_size,
+            );
+        });
+
+        egui::CentralPanel::default().show(ui, |ui| {
             ui.heading("Settings");
             ui.separator();
 
@@ -221,8 +258,6 @@ impl eframe::App for MyApp {
                 CAPTURE_SETTINGS_RELOAD.store(true, Ordering::Relaxed);
             }
 
-            let frame_rgb_size = self.rgb_size;
-
             let allow_preview = frame_rgb_size.0 != 0 && frame_rgb_size.1 != 0;
             if ui.add_enabled(allow_preview, egui::Checkbox::new(&mut self.display_rgb_preview, "Display RGB Preview")).on_hover_text("Displays a preview of the lighting, this can be disabled to improve performance").changed() {
                 save_config_option(ConfigChange::DisplayRgbPreview(self.display_rgb_preview), &mut self.toasts);
@@ -245,22 +280,16 @@ impl eframe::App for MyApp {
             if ui.checkbox(&mut self.dark_mode, "Darkmode").on_hover_text("Enables darkmode").changed() {
                 save_config_option(ConfigChange::Darkmode(self.dark_mode), &mut self.toasts);
 
-                if self.dark_mode {
-                    ctx.set_visuals(egui::Visuals::dark());
-                } else {
-                    ctx.set_visuals(egui::Visuals::light());
-                }
+                apply_theme(ui, self.dark_mode);
             }
 
-            if let Some(_) = self
+            if self
                 .plugins
                 .iter()
-                .find(|plugin| plugin.name == "update_check")
-            {
-                if ui.checkbox(&mut self.check_updates, "Check for Updates").on_hover_text("Checks for updates on startup, wont apply to current session").changed() {
+                .find(|plugin| plugin.name == "update_check").is_some()
+                && ui.checkbox(&mut self.check_updates, "Check for Updates").on_hover_text("Checks for updates on startup, wont apply to current session").changed() {
                     save_config_option(ConfigChange::CheckUpdates(self.check_updates), &mut self.toasts);
                 }
-            }
 
             if ui.button("Reset Config").on_hover_text("Warning: Resets the config to the default values").clicked() {
                 reset_config();
@@ -281,11 +310,7 @@ impl eframe::App for MyApp {
                 self.dark_mode = new_config.dark_mode;
                 self.check_updates = new_config.check_updates;
 
-                if self.dark_mode {
-                    ctx.set_visuals(egui::Visuals::dark());
-                } else {
-                    ctx.set_visuals(egui::Visuals::light());
-                }
+                apply_theme(ui, self.dark_mode);
 
                 save_config_option(
                     ConfigChange::AllConfigOptions(new_config),
@@ -310,45 +335,17 @@ impl eframe::App for MyApp {
 
             clean_logs_button(ui, &mut self.toasts);
 
-            // Rewriten plugin rendering
-            //write code that looks threw self.plugins for a plugin struct with the name being file_import and then pass the lib to import_file_ui
-            if let Some(plugin) = self
-                .plugins
-                .iter()
-                .find(|plugin| plugin.name == "update_check")
-            {
-                egui::TopBottomPanel::bottom("footer").show(ctx, |ui| {
-                    update_check_ui(plugin.lib.clone(), ui, utils::paths::logging_path().to_string_lossy().to_string());
-                });
-            }
-
-            if !self.is_startup {
-                egui::SidePanel::right("lighting_preview_panel").width_range(Rangef::new((self.rgb_size.0 * 15) as f32, (self.rgb_size.0 * 22) as f32)).show(ctx, |ui| {
-                    if self.display_rgb_preview {
-                        match CAPTURE_PREVIEW.read().unwrap().clone() {
-                            Some(preview) => {
-                                rgb_preview(ui, frame_rgb_size, preview.clone());
-                            }
-                            None => {
-                                ui.heading("No Preview Available");
-                            }
-                        }
-                        //rgb_preview(ui, frame_rgb_size, CAPTURE_PREVIEW.read().unwrap().clone());
-                    }
-                    display_device_info(ui, &mut self.toasts, &mut self.device_name, &mut self.device_creation, &mut self.device_version, &mut self.is_startup, frame_rgb_size);
-                });
-            }
         });
 
-        self.toasts.show(ctx);
+        self.toasts.show(ui.ctx());
 
         self.next_frame =
             Duration::from_millis(((1.0 / self.frame_limit.0 as f32) * 1000.0).round() as u64);
         std::thread::sleep(self.next_frame - Duration::from_millis(1));
-        ctx.request_repaint()
+        ui.ctx().request_repaint();
     }
 
-    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+    fn on_exit(&mut self) {
         save_config_option(
             ConfigChange::MultipleConfigOptions(vec![
                 ConfigChange::Brightness(self.brightness),
