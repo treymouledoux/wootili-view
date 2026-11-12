@@ -2,7 +2,7 @@
 ; Modifications by Mr.Ender
 
 #define MyAppName "Wootili-View"
-#define MyAppVersion "0.7.4"
+#define MyAppVersion "0.8.0"
 #define MyAppPublisher "Mr.Ender"
 #define MyAppURL "https://github.com/treymouledoux/wootili-view"
 #define MyAppExeName "Wootili-View.exe"
