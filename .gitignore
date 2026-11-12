@@ -3,3 +3,5 @@ plugins/*/target
 preview.png
 *.exe
 *.dll
+
+*.DS_Store
