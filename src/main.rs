@@ -39,18 +39,25 @@ fn main() -> Result<(), eframe::Error> {
         capture();
     });
 
-    while !CLOSE_APP.load(Ordering::Relaxed) {
-        eframe::run_native(
+    let result = loop {
+        let result = eframe::run_native(
             "Wootili-View",
             eframe::NativeOptions {
                 centered: true,
                 ..Default::default()
             },
             Box::new(move |_cc| Ok(Box::<MyApp>::default())),
-        )?;
-    }
+        );
+        if result.is_err() || CLOSE_APP.load(Ordering::Acquire) {
+            break result;
+        }
+    };
 
-    Ok(())
+    // Restore devices outside window callbacks, even if window creation failed.
+    CLOSE_APP.store(true, Ordering::Release);
+    CAPTURE_LOCK.store(true, Ordering::Relaxed);
+    wooting::exit_rgb();
+    result
 }
 
 struct MyApp {
@@ -363,6 +370,5 @@ impl eframe::App for MyApp {
         );
         CLOSE_APP.store(true, Ordering::Release);
         CAPTURE_LOCK.store(true, Ordering::Relaxed);
-        wooting::exit_rgb();
     }
 }

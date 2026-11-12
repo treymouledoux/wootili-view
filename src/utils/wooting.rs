@@ -1,28 +1,78 @@
+#[cfg(not(target_os = "macos"))]
 use std::sync::Mutex;
 
 use image::GenericImageView;
 use scorched::logf;
 use wooting_rgb_rust::{Device, DeviceInfo, DeviceType, Error, Frame, Rgb, Sdk};
 
-// UI queries and the capture thread share one native SDK session. Hold the lock
-// through an entire frame so refresh and shutdown cannot interrupt RGB writes.
+// Serialize complete operations, including a whole RGB frame. On macOS all
+// native calls must also stay on one thread: HIDAPI binds its manager to that
+// thread's run loop, and enumeration must never pump the GUI's run loop.
+#[cfg(not(target_os = "macos"))]
 static SDK: Mutex<Option<Sdk>> = Mutex::new(None);
 
-fn with_device<T>(operation: impl FnOnce(&mut Device<'_>) -> Result<T, Error>) -> Result<T, Error> {
+#[cfg(not(target_os = "macos"))]
+fn with_sdk<T: Send + 'static>(
+    operation: impl FnOnce(&mut Option<Sdk>) -> Result<T, Error> + Send + 'static,
+) -> Result<T, Error> {
     let mut state = SDK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    if crate::CLOSE_APP.load(std::sync::atomic::Ordering::Acquire) {
-        return Err(Error::OperationFailed(
-            "access SDK after application shutdown",
-        ));
-    }
-    if state.is_none() {
-        *state = Some(Sdk::new()?);
-    }
-    let sdk = state.as_mut().unwrap();
-    if sdk.devices()?.is_empty() {
-        sdk.refresh()?;
-    }
-    operation(&mut sdk.device(0)?)
+    operation(&mut state)
+}
+
+#[cfg(target_os = "macos")]
+fn with_sdk<T: Send + 'static>(
+    operation: impl FnOnce(&mut Option<Sdk>) -> Result<T, Error> + Send + 'static,
+) -> Result<T, Error> {
+    use std::sync::{mpsc, OnceLock};
+
+    type Job = Box<dyn FnOnce(&mut Option<Sdk>) + Send>;
+    static WORKER: OnceLock<Result<mpsc::Sender<Job>, Error>> = OnceLock::new();
+    let worker = WORKER
+        .get_or_init(|| {
+            let (sender, receiver) = mpsc::channel::<Job>();
+            std::thread::Builder::new()
+                .name("wooting-sdk".into())
+                .spawn(move || {
+                    let mut state = None;
+                    for job in receiver {
+                        job(&mut state);
+                    }
+                })
+                .map_err(|_| Error::OperationFailed("start keyboard worker"))?;
+            Ok(sender)
+        })
+        .as_ref()
+        .map_err(Clone::clone)?;
+
+    let (reply, result) = mpsc::sync_channel(1);
+    worker
+        .send(Box::new(move |state| {
+            let _ = reply.send(operation(state));
+        }))
+        .map_err(|_| Error::OperationFailed("send operation to keyboard worker"))?;
+    result
+        .recv()
+        .map_err(|_| Error::OperationFailed("receive keyboard worker result"))?
+}
+
+fn with_device<T: Send + 'static>(
+    operation: impl FnOnce(&mut Device<'_>) -> Result<T, Error> + Send + 'static,
+) -> Result<T, Error> {
+    with_sdk(move |state| {
+        if crate::CLOSE_APP.load(std::sync::atomic::Ordering::Acquire) {
+            return Err(Error::OperationFailed(
+                "access SDK after application shutdown",
+            ));
+        }
+        if state.is_none() {
+            *state = Some(Sdk::new()?);
+        }
+        let sdk = state.as_mut().unwrap();
+        if sdk.devices()?.is_empty() {
+            sdk.refresh()?;
+        }
+        operation(&mut sdk.device(0)?)
+    })
 }
 
 fn capture_dimensions(info: &DeviceInfo) -> (u32, u32, u32) {
@@ -51,7 +101,7 @@ pub fn get_device_name() -> String {
 }
 
 fn device_response(command: u8) -> Result<Vec<u8>, Error> {
-    with_device(|device| {
+    with_device(move |device| {
         let info = device.info()?;
         let response = device.feature_response(command, [0; 4])?;
         // V2 responses include a report-ID byte before the legacy header.
@@ -93,7 +143,7 @@ pub fn draw_rgb(
     red_shift_fix: bool,
     highlight_wasd: bool,
 ) -> bool {
-    with_device(|device| {
+    with_device(move |device| {
         let info = device.info()?;
         let (width, height, first_row) = capture_dimensions(&info);
         if resized_capture.dimensions() != (width, height) {
@@ -134,18 +184,25 @@ pub fn draw_rgb(
 }
 
 pub fn reconnect_device() {
-    let mut state = SDK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    if let Some(sdk) = state.as_mut() {
-        let _ = sdk.refresh();
-    }
+    let _ = with_sdk(|state| {
+        if crate::CLOSE_APP.load(std::sync::atomic::Ordering::Acquire) {
+            return Ok(());
+        }
+        if let Some(sdk) = state.as_mut() {
+            sdk.refresh()?;
+        }
+        Ok(())
+    });
 }
 
 pub fn exit_rgb() {
-    let mut state = SDK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    if let Some(sdk) = state.take() {
-        if let Err(error) = sdk.close() {
-            logf!(Warning, "RGB shutdown: {}", error);
+    if let Err(error) = with_sdk(|state| {
+        if let Some(sdk) = state.take() {
+            sdk.close()?;
         }
+        Ok(())
+    }) {
+        logf!(Warning, "RGB shutdown: {}", error);
     }
 }
 
@@ -157,6 +214,23 @@ pub fn update_rgb() {
 mod tests {
     use super::*;
     use wooting_rgb_rust::Layout;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn sdk_operations_use_one_worker_instead_of_the_calling_threads() {
+        let caller = std::thread::current().id();
+        let worker = with_sdk(|_| Ok(std::thread::current().id())).unwrap();
+        assert_ne!(worker, caller);
+        let other_worker = std::thread::spawn(|| {
+            let caller = std::thread::current().id();
+            let worker = with_sdk(|_| Ok(std::thread::current().id())).unwrap();
+            assert_ne!(worker, caller);
+            worker
+        })
+        .join()
+        .unwrap();
+        assert_eq!(worker, other_worker);
+    }
 
     #[test]
     fn capture_uses_device_dimensions_and_only_skips_the_60_percent_spacer() {
