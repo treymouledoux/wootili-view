@@ -32,7 +32,7 @@ cargo build --release
 
 For an existing checkout, run `git submodule update --init --recursive`.
 
-`cargo build --release` builds the app and the update-check plugin through the root `build.rs`. On Windows, the finished files are `target/release/wootili-view.exe` and `target/release/update_check.dll`. Keep both files together when copying the app. The Inno Setup script reads these release outputs directly. macOS builds require Xcode Command Line Tools with libclang and produce `target/release/wootili-view` with `target/release/libupdate_check.dylib` beside it.
+`cargo build --release` builds the app and the update-check plugin through the root `build.rs`. On Windows, the finished files are `target/release/wootili-view.exe` and `target/release/update_check.dll`. Keep both files together when copying the app. The Inno Setup script reads these release outputs directly. macOS builds require Xcode Command Line Tools with libclang and produce `target/release/wootili-view` with `target/release/libupdate_check.dylib` beside it. The project’s `.cargo/config.toml` selects Apple Clang for macOS C/C++ dependencies, including the plugin’s TLS library, even when your shell sets a generic `CC` or `CXX` to GCC.
 
 Use `cargo run` for a debug build with the plugin, `cargo test` to check the app and plugin loading, and `cargo clean` to remove Cargo build outputs. The plugin and app share the workspace lockfile. The plugin returns version text through a C-compatible interface, and the app renders the update-check footer. The build script uses a separate output directory for its nested plugin build.
 

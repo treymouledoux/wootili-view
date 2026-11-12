@@ -9,6 +9,6 @@ crate-type = ["cdylib"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-reqwest = { version = "0.12.12", features = ["blocking"] }
-serde_json = "1.0.139"
-scorched = "0.5.3"
+reqwest = { version = "0.13.5", features = ["blocking"] }
+serde_json = "1.0.154"
+scorched = "0.7.0"

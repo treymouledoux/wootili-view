@@ -5,7 +5,7 @@ use std::{
 };
 
 use reqwest::header::{HeaderMap, USER_AGENT};
-use scorched::{logf, set_logging_path, LogData, LogImportance};
+use scorched::{logf, set_logging_path};
 
 static LATEST_VER: OnceLock<Option<String>> = OnceLock::new();
 

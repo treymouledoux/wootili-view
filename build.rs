@@ -5,6 +5,7 @@ fn main() {
     println!("cargo:rerun-if-changed=plugins/update_check/Cargo.toml");
     println!("cargo:rerun-if-changed=Cargo.toml");
     println!("cargo:rerun-if-changed=Cargo.lock");
+    println!("cargo:rerun-if-changed=.cargo/config.toml");
 
     let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
     let out_dir = PathBuf::from(env::var_os("OUT_DIR").unwrap());

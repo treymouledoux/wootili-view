@@ -1,0 +1,7 @@
+[env]
+# Apple SDK headers and the plugin's AWS-LC dependency require Clang on macOS.
+# Target-specific defaults take precedence over a global CC/CXX set to GCC.
+CC_aarch64_apple_darwin = "/usr/bin/clang"
+CXX_aarch64_apple_darwin = "/usr/bin/clang++"
+CC_x86_64_apple_darwin = "/usr/bin/clang"
+CXX_x86_64_apple_darwin = "/usr/bin/clang++"
