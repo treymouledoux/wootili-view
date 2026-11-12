@@ -43,6 +43,10 @@ fn main() -> Result<(), eframe::Error> {
         let result = eframe::run_native(
             "Wootili-View",
             eframe::NativeOptions {
+                viewport: egui::ViewportBuilder::default().with_icon(
+                    eframe::icon_data::from_png_bytes(include_bytes!("../assets/icon.png"))
+                        .expect("The embedded app icon must be a valid PNG"),
+                ),
                 centered: true,
                 ..Default::default()
             },

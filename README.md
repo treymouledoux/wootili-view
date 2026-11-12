@@ -1,43 +1,63 @@
 # Wootili-View
 
-![app_preview](https://github.com/treymouledoux/wootili-view/blob/master/.github/assets/app_preview.png?raw=true)
+<img src="assets/icon.png" width="128" alt="Wootili-View W icon">
 
-> [!IMPORTANT]
-> I plan on doing a full rewrite to this software, this will overhaul the rgb controlling and the ui!
+Wootili-View turns the colors on your screen into ambient lighting on a Wooting keyboard. It captures your chosen display, scales each frame to your keyboard’s RGB layout, and maps the resulting colors to individual keys.
 
-## About
+![Wootili-View settings and RGB preview](.github/assets/app_preview.png)
 
-Wootili-View is a project designed to enhance your Wooting device by providing an ambient lighting effect. This software allows you to map a downscaled version of your screen onto your Wooting keyboard, creating a dynamic and immersive ambilight experience.
+## Features
 
-## How It Works
+- Choose which display to capture and preview the RGB layout in the app.
+- Adjust brightness and scaling, dim bright scenes, correct red tint, or highlight WASD.
+- Set separate frame-rate limits for the interface and keyboard lighting.
+- Check for new GitHub releases on startup with the optional update-check plugin.
 
-The functionality of this project is straightforward process. The program captures screenshots of your specified display, then the program downscales it to match the size of your Wooting device's RGB layout. Subsequently, it maps the colors from the downscaled screenshots to the corresponding keys on your Wooting device, producing a captivating ambilight effect.
+## Platforms and prerequisites
 
-## Getting Started
+Install Rust 1.95 or newer to build from source.
 
-> [!IMPORTANT]  
-> At this current time this project is only supported on Windows.
+| Platform | Status and build requirements |
+| --- | --- |
+| Windows | Original platform. Install Visual Studio C++ Build Tools with the Windows SDK and LLVM/libclang. Set `LIBCLANG_PATH` if Cargo can’t find libclang. |
+| macOS | Experimental. The build, startup, device refresh, shutdown, and update-check plugin have been verified. Screen capture and lighting on a physical Wooting keyboard still need testing. Install the Xcode Command Line Tools with Clang and libclang. |
+| Linux | The SDK wrapper supports Linux and needs libclang, `pkg-config`, and the libudev development headers (`libudev-dev` on Ubuntu). The full app remains unverified. |
 
-### Prerequisites
+macOS builds use Apple Clang through the project’s `.cargo/config.toml`, even if your shell sets a generic `CC` or `CXX` to GCC.
 
-You will need Rust 1.95+, Visual Studio C++ Build Tools with the Windows SDK, and LLVM/libclang to compile the program. Set `LIBCLANG_PATH` if LLVM is outside its usual installation directory.
+## Build and run
 
-Clone the nested SDK submodules before building.
+Clone with recursive submodules to fetch the RGB wrapper, the official Wooting RGB SDK, and HIDAPI.
 
 ```sh
 git clone --recurse-submodules https://github.com/treymouledoux/wootili-view.git
 cd wootili-view
 cargo build --release
+cargo run --release
 ```
 
-For an existing checkout, run `git submodule update --init --recursive`.
+For an existing checkout, run `git submodule update --init --recursive` before building. Use `cargo run` for a debug build and `cargo test --workspace` to run the app, plugin, and SDK wrapper tests.
 
-`cargo build --release` builds the app and the update-check plugin through the root `build.rs`. On Windows, the finished files are `target/release/wootili-view.exe` and `target/release/update_check.dll`. Keep both files together when copying the app. The Inno Setup script reads these release outputs directly. macOS builds require Xcode Command Line Tools with libclang and produce `target/release/wootili-view` with `target/release/libupdate_check.dylib` beside it. The project’s `.cargo/config.toml` selects Apple Clang for macOS C/C++ dependencies, including the plugin’s TLS library, even when your shell sets a generic `CC` or `CXX` to GCC.
+`build.rs` builds the update-check plugin and places it beside the executable. Keep both files in the same directory when distributing the app with update checking enabled.
 
-Use `cargo run` for a debug build with the plugin, `cargo test` to check the app and plugin loading, and `cargo clean` to remove Cargo build outputs. The plugin and app share the workspace lockfile. The plugin returns version text through a C-compatible interface, and the app renders the update-check footer. The build script uses a separate output directory for its nested plugin build.
+| Platform | Executable | Update-check plugin |
+| --- | --- | --- |
+| Windows | `target/release/wootili-view.exe` | `target/release/update_check.dll` |
+| macOS | `target/release/wootili-view` | `target/release/libupdate_check.dylib` |
 
-On macOS, settings are stored in `~/Library/Application Support/Wootili-View/config.ron` and logs in `~/Library/Logs/Wootili-View`. The app creates its config directory when saving. Windows continues to use `~/AppData/Local/Wootili-View` with a `logs` subdirectory.
+The Windows Inno Setup script, `Wootili-View.iss`, uses these release files. `cargo test` checks that the staged plugin loads. To run the optional UI test that calls the GitHub Releases API, use `cargo test staged_update_check_plugin_draws_across_frames -- --ignored`.
 
-RGB control uses [wooting-rgb-rust](https://github.com/treymouledoux/wooting-rgb-rust), pinned as a submodule in `vendor/wooting-rgb-rust`. That wrapper builds its pinned official Wooting SDK and HIDAPI sources. Keyboard dimensions come from the SDK metadata, including 80HE and 60HE V2 models.
+## Settings and logs
 
-To update the wrapper, check out a reviewed commit inside `vendor/wooting-rgb-rust`, run `git submodule update --init --recursive`, build the app, and commit the new submodule pointer.
+| Platform | Settings | Logs |
+| --- | --- | --- |
+| Windows | `~/AppData/Local/Wootili-View/config.ron` | `~/AppData/Local/Wootili-View/logs` |
+| macOS | `~/Library/Application Support/Wootili-View/config.ron` | `~/Library/Logs/Wootili-View` |
+
+## Updating the RGB SDK wrapper
+
+The app uses [wooting-rgb-rust](https://github.com/treymouledoux/wooting-rgb-rust), pinned at `vendor/wooting-rgb-rust`. The wrapper builds its pinned Wooting RGB SDK and HIDAPI sources. The app reads keyboard layouts from SDK metadata, which includes the 80HE and 60HE V2.
+
+To update the wrapper, check out a reviewed commit in `vendor/wooting-rgb-rust`, run `git -C vendor/wooting-rgb-rust submodule update --init --recursive` from the app repository, then build and test. Commit the updated `vendor/wooting-rgb-rust` submodule pointer in the app repository.
+
+I’m planning a rewrite of the RGB controls and interface.
