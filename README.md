@@ -36,6 +36,8 @@ For an existing checkout, run `git submodule update --init --recursive`.
 
 Use `cargo run` for a debug build with the plugin, `cargo test` to check the app and plugin loading, and `cargo clean` to remove Cargo build outputs. The plugin and app share the workspace lockfile. The plugin returns version text through a C-compatible interface, and the app renders the update-check footer. The build script uses a separate output directory for its nested plugin build.
 
+On macOS, settings are stored in `~/Library/Application Support/Wootili-View/config.ron` and logs in `~/Library/Logs/Wootili-View`. The app creates its config directory when saving. Windows continues to use `~/AppData/Local/Wootili-View` with a `logs` subdirectory.
+
 RGB control uses [wooting-rgb-rust](https://github.com/treymouledoux/wooting-rgb-rust), pinned as a submodule in `vendor/wooting-rgb-rust`. That wrapper builds its pinned official Wooting SDK and HIDAPI sources. Keyboard dimensions come from the SDK metadata, including 80HE and 60HE V2 models.
 
 To update the wrapper, check out a reviewed commit inside `vendor/wooting-rgb-rust`, run `git submodule update --init --recursive`, build the app, and commit the new submodule pointer.

@@ -1,4 +1,4 @@
-use std::fs::File;
+use std::{fs::File, io, path::Path};
 
 use egui_notify::Toasts;
 use image::imageops::FilterType;
@@ -83,13 +83,18 @@ pub fn gen_config() {
 
     let config_str = to_string_pretty(&data, config)
         .log_expect(LogImportance::Error, "Unable to serialize default config");
-    std::fs::write(paths::config_path().join("config.ron"), config_str)
+    write_config_file(&paths::config_path(), &config_str)
         .log_expect(LogImportance::Error, "Unable to write config file");
 
     log_this(LogData {
         importance: LogImportance::Info,
         message: "Config file has been generated.".to_string(),
     });
+}
+
+fn write_config_file(directory: &Path, config: &str) -> io::Result<()> {
+    std::fs::create_dir_all(directory)?;
+    std::fs::write(directory.join("config.ron"), config)
 }
 
 pub fn config_exists() -> bool {
@@ -166,7 +171,7 @@ pub fn save_config_option(new: ConfigChange, toasts: &mut Toasts) {
 
     let config_str = to_string_pretty(&data, config)
         .log_expect(LogImportance::Error, "Unable to serialize config");
-    std::fs::write(paths::config_path().join("config.ron"), config_str)
+    write_config_file(&paths::config_path(), &config_str)
         .log_expect(LogImportance::Error, "Unable to write config file");
 }
 
@@ -203,5 +208,38 @@ fn filter_to_downscale_index(filter: FilterType) -> u8 {
         FilterType::CatmullRom => 2,
         FilterType::Gaussian => 3,
         FilterType::Lanczos3 => 4,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn config_write_creates_missing_directories_and_saves_again() -> io::Result<()> {
+        let temporary = std::env::temp_dir().join(format!(
+            "wootili-config-test-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let directory = temporary.join("Application Support/Wootili-View");
+        assert!(!directory.exists());
+
+        write_config_file(&directory, "first settings")?;
+        assert_eq!(
+            std::fs::read_to_string(directory.join("config.ron"))?,
+            "first settings"
+        );
+        write_config_file(&directory, "updated settings")?;
+        assert_eq!(
+            std::fs::read_to_string(directory.join("config.ron"))?,
+            "updated settings"
+        );
+
+        std::fs::remove_dir_all(temporary)
     }
 }
