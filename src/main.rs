@@ -113,11 +113,6 @@ impl Default for MyApp {
 impl eframe::App for MyApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         if self.is_startup {
-            if !cfg!(windows) {
-                self.toasts
-                    .error("This application is not supported on your operating system")
-                    .duration(Some(Duration::from_secs(120)));
-            }
             logf!(Info, "Connected to device Name: {}", self.device_name);
             match self.device_name.as_str() {
                 "N/A" => {
