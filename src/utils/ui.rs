@@ -1,4 +1,4 @@
-use eframe::egui::{self, SelectableLabel, Ui};
+use eframe::egui::{self, Ui};
 use egui_notify::Toasts;
 use image::{imageops::FilterType, DynamicImage, GenericImageView};
 use scorched::{log_this, logf, LogData, LogImportance};
@@ -10,6 +10,16 @@ use crate::{
 
 use super::capture;
 
+pub fn apply_theme(ui: &mut Ui, dark_mode: bool) {
+    let theme = if dark_mode {
+        egui::Theme::Dark
+    } else {
+        egui::Theme::Light
+    };
+    ui.ctx().set_theme(theme);
+    ui.reset_style();
+}
+
 pub fn downscale_label(
     ui: &mut Ui,
     current: &mut FilterType,
@@ -19,7 +29,7 @@ pub fn downscale_label(
     toasts: &mut Toasts,
 ) {
     if ui
-        .add(SelectableLabel::new(*current == new, label))
+        .selectable_label(*current == new, label)
         .on_hover_text(hover_text)
         .clicked()
     {
@@ -39,7 +49,7 @@ pub fn clean_logs_button(ui: &mut Ui, toasts: &mut Toasts) {
         match std::fs::remove_dir_all(paths::logging_path()) {
             Ok(_) => {
                 log_this(LogData {
-                    importance: scorched::LogImportance::Info,
+                    importance: LogImportance::Info,
                     message: "Logs folder has been cleaned".to_string(),
                 });
                 toasts
